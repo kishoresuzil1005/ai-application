@@ -1,0 +1,33 @@
+{
+  "name": "pepul-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "next": "cd frontend && next dev",
+    "electron": "electron .",
+    "dev": "concurrently --kill-others \"npm run next\" \"wait-on http://localhost:3000 --timeout 60000 && npm run electron\"",
+    "build": "cd frontend && next build",
+    "start": "cd frontend && next start"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.11.0",
+    "concurrently": "^10.0.3",
+    "dotenv": "^17.4.2",
+    "electron": "^42.3.3",
+    "lucide-react": "^1.17.0",
+    "next": "^16.2.7",
+    "openai": "^6.42.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "sqlite3": "^6.0.1",
+    "uuid": "^14.0.0",
+    "wait-on": "^9.0.10",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "electron-rebuild": "^3.2.9"
+  }
+}

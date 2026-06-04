@@ -1,0 +1,24 @@
+.DS_Store
+node_modules/
+**/node_modules/
+*.log
+*.swp
+.env
+*.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Electron and Next.js build artifacts
+**/.next/
+**/out/
+**/dist/
+
+# Local databases and caches
+pepul-desktop/data/*.db
+pepul-desktop/node_modules/
+pepul-desktop/frontend/node_modules/
+pepul-desktop/electron/.main.js.swp
+
+# Ignore the other workspace folder if not part of the intended repo
+pepul-ai/
