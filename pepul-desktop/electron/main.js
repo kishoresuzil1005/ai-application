@@ -132,7 +132,50 @@ app.on(
 );
 
 /* --------------------------
-   OPEN FOLDER
+   GENERATE CODE
+-------------------------- */
+
+ipcMain.handle(
+  "generate-code",
+  async (
+    _,
+    architecture,
+    wireflow,
+    files
+  ) => {
+    try {
+      const result =
+        await groq.generateCode(
+          architecture,
+          wireflow,
+          files
+        );
+        console.log(
+  "\n===== RAW CODE RESPONSE =====\n"
+);
+
+console.log(result);
+
+console.log(
+  "\n=============================\n"
+);
+
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error.message,
+      };
+    }
+  }
+);
+
+/* --------------------------
+   WORKSPACE SCANNER & EDITORS
 -------------------------- */
 
 ipcMain.handle(

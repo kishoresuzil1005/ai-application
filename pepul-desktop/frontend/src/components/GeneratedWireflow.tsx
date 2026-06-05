@@ -52,19 +52,25 @@ function ScreenNode({
       >
         {data.components?.map(
           (
-            component: string,
+            component: any,
             index: number
-          ) => (
-            <div
-              key={index}
-              style={{
-                fontSize: 12,
-                color: "#cbd5e1",
-              }}
-            >
-              • {component}
-            </div>
-          )
+          ) => {
+            // Handle both string and object components
+            const text = typeof component === 'string' 
+              ? component 
+              : (component?.name || component?.type || JSON.stringify(component));
+            return (
+              <div
+                key={index}
+                style={{
+                  fontSize: 12,
+                  color: "#cbd5e1",
+                }}
+              >
+                • {text}
+              </div>
+            );
+          }
         )}
       </div>
 
@@ -90,22 +96,23 @@ export default function GeneratedWireflow({
       (
         screen: any,
         index: number
-      ) => ({
-        id: screen.id,
-
-        type: "screen",
-
-        position: {
-          x: 500,
-          y: index * 240,
-        },
-
-        data: {
-          title: screen.title,
-          components:
-            screen.components || [],
-        },
-      })
+      ) => {
+        const components = (screen.components || []).map((c: any) =>
+          typeof c === 'string' ? c : (c?.name || c?.type || '')
+        ).filter(Boolean);
+        return {
+          id: screen.id,
+          type: "screen",
+          position: {
+            x: 500,
+            y: index * 240,
+          },
+          data: {
+            title: screen.title,
+            components,
+          },
+        };
+      }
     ) || [];
 
   const edges =
