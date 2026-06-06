@@ -1,38 +1,40 @@
-const OpenAI = require("openai");
+const OLLAMA_URL =
+  "http://localhost:11434/api/generate";
 
-const client = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL:
-    "https://api.groq.com/openai/v1",
-});
-
-async function askGroq(
+async function askModel(
   systemPrompt,
   userPrompt
 ) {
   const response =
-    await client.chat.completions.create({
-      model:
-        "llama-3.3-70b-versatile",
-
-      temperature: 0.1,
-
-      messages: [
-        {
-          role: "system",
-          content:
-            systemPrompt,
+    await fetch(
+      OLLAMA_URL,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
         },
-        {
-          role: "user",
-          content:
-            userPrompt,
-        },
-      ],
-    });
+        body: JSON.stringify({
+          model: "qwen3:4b",
+          prompt:
+            `${systemPrompt}
 
-  return response.choices[0]
-    .message.content;
+${userPrompt}`,
+          stream: false,
+        }),
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `Ollama Error: ${response.status}`
+    );
+  }
+
+  const data =
+    await response.json();
+
+  return data.response;
 }
 
 /* --------------------------
@@ -42,7 +44,7 @@ async function askGroq(
 async function generateWireflow(
   userPrompt
 ) {
-  return askGroq(
+  return askModel(
     `
 You are a Senior UX Architect.
 
@@ -50,22 +52,9 @@ Return ONLY JSON.
 
 {
   "projectName":"",
-  "screens":[
-    {
-      "id":"",
-      "title":"",
-      "components":[]
-    }
-  ],
-  "flows":[
-    {
-      "from":"",
-      "to":""
-    }
-  ]
+  "screens":[],
+  "flows":[]
 }
-
-Generate actual application screens.
 `,
     userPrompt
   );
@@ -78,15 +67,13 @@ Generate actual application screens.
 async function generateRequirements(
   wireflow
 ) {
-  return askGroq(
+  return askModel(
     `
 Return ONLY JSON.
 
 {
   "requirements":[]
 }
-
-Generate detailed product requirements.
 `,
     wireflow
   );
@@ -99,7 +86,7 @@ Generate detailed product requirements.
 async function generateArchitecture(
   wireflow
 ) {
-  return askGroq(
+  return askModel(
     `
 Return ONLY JSON.
 
@@ -107,11 +94,8 @@ Return ONLY JSON.
   "frontend":"",
   "backend":"",
   "database":"",
-  "auth":"",
   "apis":[]
 }
-
-Generate production architecture.
 `,
     wireflow
   );
@@ -124,196 +108,133 @@ Generate production architecture.
 async function generateFileStructure(
   architecture
 ) {
-  return askGroq(
+  return askModel(
     `
 Return ONLY JSON.
 
 {
   "folders":[]
 }
-
-Generate complete project structure.
-
-Example:
-
-[
-  "frontend",
-  "frontend/src",
-  "frontend/src/app",
-  "backend",
-  "backend/src",
-  "database"
-]
 `,
     architecture
   );
 }
 
+/* --------------------------
+   SOURCE CODE
+-------------------------- */
+
 async function generateSourceCode(
-   data
- ) {
-   return askGroq(
-     `
-You are a Senior Full Stack Engineer.
+  data
+) {
+  return askModel(
+    `
+Return ONLY JSON.
 
-CRITICAL: Return ONLY valid, properly escaped JSON. NO markdown code blocks, NO explanations.
-
-Ensure ALL strings in the "content" field are properly escaped:
-- Use \\n for newlines
-- Use \\" for quotes
-- Use \\\\ for backslashes
-- Escape all special characters properly
-
-Format:
 {
-  "files": [
+  "files":[
     {
-      "path": "frontend/src/app/page.tsx",
-      "content": "properly escaped content here with escaped newlines and quotes"
+      "path":"",
+      "content":""
     }
   ]
 }
 
-Generate a complete production-ready application.
-
-Requirements:
-- Next.js App Router
-- TypeScript
-- TailwindCSS
-- Backend API
-- Database layer
-- Authentication if needed
-
-Generate ALL files required.
-
-Return ONLY JSON with properly escaped strings.
+Generate a complete application.
 `,
-     JSON.stringify(
-       data,
-       null,
-       2
-     )
-   );
- }
+    JSON.stringify(
+      data,
+      null,
+      2
+    )
+  );
+}
 
- async function generateCode(architecture, wireflow, files) {
-   return askGroq(
-     `
-You are a Senior Full Stack Engineer.
+/* --------------------------
+   CODE
+-------------------------- */
 
-CRITICAL: Return ONLY valid, properly escaped JSON. NO markdown code blocks, NO explanations.
+async function generateCode(
+  architecture,
+  wireflow,
+  files
+) {
+  return askModel(
+    `
+Return ONLY JSON.
 
-Ensure ALL strings in the "content" field are properly escaped:
-- Use \\n for newlines
-- Use \\" for quotes
-- Use \\\\ for backslashes
-- Escape all special characters properly
-
-Format:
 {
-  "files": [
+  "files":[
     {
-      "path": "frontend/package.json",
-      "content": "..."
+      "path":"",
+      "content":""
     }
   ]
 }
-
-Generate a complete production-ready application.
-
-Requirements:
-- Next.js App Router
-- TypeScript
-- TailwindCSS
-- Backend API
-- Database layer
-- Authentication if needed
-
-Context:
-Architecture: ${JSON.stringify(architecture || {}, null, 2)}
-Wireflow: ${JSON.stringify(wireflow || {}, null, 2)}
-Directories: ${JSON.stringify(files || [], null, 2)}
-
-Return ONLY valid JSON with properly escaped strings.
 `,
-     JSON.stringify({ architecture, wireflow, files }, null, 2)
-   );
- }
+    JSON.stringify({
+      architecture,
+      wireflow,
+      files,
+    })
+  );
+}
 
- async function chatAgent(
-   messages,
-   currentFileContext,
-   model
- ) {
-   let fileContextPrompt = "";
-   if (currentFileContext && currentFileContext.path) {
-     fileContextPrompt = `\nThe user is currently viewing the file "${currentFileContext.path}". Here is its current content:\n\`\`\`\n${currentFileContext.content}\n\`\`\`\n`;
-   }
+/* --------------------------
+   CHAT
+-------------------------- */
 
-   const systemPrompt = `You are the Antigravity Agent, a senior AI developer embedded within the Antigravity IDE.
- You are helping the user build their project or design their applications.
- ${fileContextPrompt}
- Please chat with the user, answer questions, explain concepts, or offer design recommendations.
- Always format code in standard Markdown blocks. If you write code, the user can click "Apply Code" to automatically overwrite their active file.`;
+async function chatAgent(
+  messages
+) {
+  return askModel(
+    "You are a Senior Software Engineer.",
+    JSON.stringify(messages)
+  );
+}
 
-   const response = await client.chat.completions.create({
-     model: model || "llama-3.3-70b-versatile",
-     temperature: 0.3,
-     messages: [
-       { role: "system", content: systemPrompt },
-       ...messages
-     ]
-   });
+/* --------------------------
+   SELF HEALING
+-------------------------- */
 
-   return response.choices[0].message.content;
- }
+async function fixCompilationError(
+  files,
+  errorLog
+) {
+  return askModel(
+    `
+You are a Senior Full Stack Engineer.
 
- async function fixCompilationError(
-   files,
-   errorLog,
-   model
- ) {
-   const filesContext = files
-     .map(
-       (f) =>
-         `File: ${f.path}\n\`\`\`\n${f.content}\n\`\`\`\n`
-     )
-     .join("\n");
+Fix the compilation error.
 
-   const prompt = `We ran the application and encountered the following error/crash during compilation or runtime:
+Return ONLY JSON.
 
-Error Output:
+{
+  "files":[
+    {
+      "path":"",
+      "content":""
+    }
+  ]
+}
+`,
+    `
+Error:
+
 ${errorLog}
 
-Here are the source files currently in the workspace:
-${filesContext}
+Files:
 
-You are the Antigravity self-healing agent. Please analyze the error, identify which file needs to be modified, and repair the code to solve the issue.
-Return ONLY valid JSON in this exact structure. Do not output markdown, explanations, or any other text.
-
-{
-  "files": [
-    {
-      "path": "path/to/repaired_file",
-      "content": "entire corrected file contents here"
-    }
-  ]
+${JSON.stringify(
+  files,
+  null,
+  2
+)}
+`
+  );
 }
 
-Ensure all special characters and newlines are properly escaped in the JSON string.`;
-
-   const response = await client.chat.completions.create({
-     model: model || "llama-3.3-70b-versatile",
-     temperature: 0.1,
-     messages: [
-       { role: "user", content: prompt }
-     ]
-   });
-
-   return response.choices[0].message.content;
- }
-
- module.exports = {
+module.exports = {
   generateWireflow,
   generateRequirements,
   generateArchitecture,

@@ -10,6 +10,9 @@ const {
 
 const fs = require("fs");
 const path = require("path");
+const {
+  execSync
+} = require("child_process");
 
 const groq = require("./services/groq");
 
@@ -178,21 +181,28 @@ console.log(
    WORKSPACE SCANNER & EDITORS
 -------------------------- */
 
+/* --------------------------
+   WORKSPACE FILES
+-------------------------- */
+
 ipcMain.handle(
-  "open-folder",
+  "get-workspace-files",
   async () => {
-    const result =
-      await dialog.showOpenDialog({
-        properties: [
-          "openDirectory",
-        ],
-      });
+    try {
+      const workspace = path.join(
+        process.cwd(),
+        "data"
+      );
 
-    if (result.canceled) {
-      return null;
+      if (!fs.existsSync(workspace)) {
+        return [];
+      }
+
+      return fs.readdirSync(workspace);
+    } catch (error) {
+      console.error(error);
+      return [];
     }
-
-    return result.filePaths[0];
   }
 );
 
@@ -438,4 +448,43 @@ ipcMain.handle(
     }
   }
 );
+//* --------------------------
+   WORKSPACE FILES
+-------------------------- */
 
+ipcMain.handle(
+  "get-workspace-files",
+  async () => {
+    try {
+      return [];
+    } catch (error) {
+      console.error(error);
+      return [];
+    }
+  }
+);
+
+/* --------------------------
+   GIT STATUS
+-------------------------- */
+
+ipcMain.handle(
+  "get-git-status",
+  async () => {
+    try {
+      return {
+        branch: "main",
+        modified: [],
+        staged: [],
+      };
+    } catch (error) {
+      console.error(error);
+
+      return {
+        branch: "main",
+        modified: [],
+        staged: [],
+      };
+    }
+  }
+);
