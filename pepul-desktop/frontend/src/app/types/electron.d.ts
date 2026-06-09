@@ -90,10 +90,24 @@ declare global {
 
       stopBuildLoop(): Promise<{ success: boolean }>;
 
+      getAIModel(): Promise<{
+        provider: string;
+        model: string;
+        codeProvider: string;
+        codeModel: string;
+        chatProvider: string;
+        chatModel: string;
+      }>;
+
+      setAIModel(opts: {
+        provider: string;
+        model: string;
+        domain?: string;
+      }): Promise<boolean>;
+
       onTerminalLog(callback: (log: string) => void): void;
 
       onBuildStatus(callback: (status: string) => void): void;
     };
   }
 }
-
