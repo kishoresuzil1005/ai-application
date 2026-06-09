@@ -101,7 +101,15 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke("start-build-loop", { projectName, files, currentTechStack }),
 
     stopBuildLoop: () =>
-      ipcRenderer.invoke("stop-build-loop"),
+      ipcRenderer.invoke(
+        "stop-build-loop"
+      ),
+
+    getAIModel: () =>
+      ipcRenderer.invoke("get-ai-model"),
+
+    setAIModel: (opts) =>
+      ipcRenderer.invoke("set-ai-model", opts),
 
     onTerminalLog: (callback) => {
       // Clean listener first to avoid duplicate bindings

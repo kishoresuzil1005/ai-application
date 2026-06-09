@@ -14,7 +14,7 @@ const {
   execSync
 } = require("child_process");
 
-const groq = require("./services/groq");
+const agents = require("./services/agents");
 
 function extractJsonString(raw) {
   let text = raw.trim();
@@ -56,6 +56,36 @@ function extractJsonString(raw) {
       throw parseError;
     }
   }
+}
+
+function normalizeSourceCodeResponse(parsed) {
+  if (parsed.files) return parsed;
+  
+  // Handle nested { project, wireflow, sourceCode } format
+  if (parsed.sourceCode && typeof parsed.sourceCode === "object") {
+    const normalized = { files: [] };
+    const skipKeys = ["project", "wireflow", "sourceCode", "frontend", "backend", "database", "nodejs", "node.js", "express", "api"];
+    const extractFiles = (obj, prefix = "") => {
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === "string") {
+          // Clean up the path
+          let cleanPath = prefix + key;
+          cleanPath = cleanPath.replace(/^\/+/, "").replace(/\/+/g, "/");
+          normalized.files.push({ path: cleanPath, content: value });
+        } else if (typeof value === "object" && value !== null) {
+          if (skipKeys.includes(key.toLowerCase())) {
+            extractFiles(value, prefix);
+          } else {
+            extractFiles(value, prefix + key + "/");
+          }
+        }
+      }
+    };
+    extractFiles(parsed.sourceCode);
+    return normalized;
+  }
+  
+  return { files: [{ path: "README.md", content: "# Generated App\n\nSetup: npm install && npm run dev" }] };
 }
 
 function createWindow() {
@@ -148,7 +178,7 @@ ipcMain.handle(
   ) => {
     try {
       const result =
-        await groq.generateCode(
+        await agents.generateCode(
           architecture,
           wireflow,
           files
@@ -163,9 +193,12 @@ console.log(
   "\n=============================\n"
 );
 
+      // Normalize the response format
+      const parsed = normalizeSourceCodeResponse(JSON.parse(extractJsonString(result)));
+
       return {
         success: true,
-        data: result,
+        data: JSON.stringify(parsed),
       };
     } catch (error) {
       return {
@@ -215,7 +248,7 @@ ipcMain.handle(
   async (_, prompt) => {
     try {
       const result =
-        await groq.generateWireflow(
+        await agents.generateWireflow(
           prompt
         );
 
@@ -244,7 +277,7 @@ ipcMain.handle(
   async (_, wireflow) => {
     try {
       const result =
-        await groq.generateRequirements(
+        await agents.generateRequirements(
           typeof wireflow ===
             "string"
             ? wireflow
@@ -280,7 +313,7 @@ ipcMain.handle(
   async (_, wireflow) => {
     try {
       const result =
-        await groq.generateArchitecture(
+        await agents.generateArchitecture(
           typeof wireflow ===
             "string"
             ? wireflow
@@ -319,7 +352,7 @@ ipcMain.handle(
   ) => {
     try {
       const result =
-        await groq.generateFileStructure(
+        await agents.generateFileStructure(
           typeof architecture ===
             "string"
             ? architecture
@@ -351,13 +384,15 @@ ipcMain.handle(
   async (_, data) => {
     try {
       const result =
-        await groq.generateSourceCode(
+        await agents.generateSourceCode(
           data
         );
 
+      const parsed = normalizeSourceCodeResponse(JSON.parse(extractJsonString(result)));
+
       return {
         success: true,
-        data: result,
+        data: JSON.stringify(parsed),
       };
     } catch (error) {
       return {
@@ -389,7 +424,7 @@ ipcMain.handle(
       });
 
       const sourceCode =
-        await groq.generateSourceCode(
+        await agents.generateSourceCode(
           {
             wireflow:
               data.wireflow,
@@ -400,12 +435,7 @@ ipcMain.handle(
 
       let parsed;
       try {
-        parsed =
-          JSON.parse(
-            extractJsonString(
-              sourceCode
-            )
-          );
+        parsed = normalizeSourceCodeResponse(JSON.parse(extractJsonString(sourceCode)));
       } catch (parseError) {
         console.error("Failed to parse generated JSON:", sourceCode.substring(0, 500));
         throw new Error(`Invalid JSON from code generation: ${parseError.message}`);
@@ -448,22 +478,6 @@ ipcMain.handle(
     }
   }
 );
-//* --------------------------
-   WORKSPACE FILES
--------------------------- */
-
-ipcMain.handle(
-  "get-workspace-files",
-  async () => {
-    try {
-      return [];
-    } catch (error) {
-      console.error(error);
-      return [];
-    }
-  }
-);
-
 /* --------------------------
    GIT STATUS
 -------------------------- */
@@ -488,3 +502,66 @@ ipcMain.handle(
     }
   }
 );
+
+/* --------------------------
+   READ/WRITE FILE
+-------------------------- */
+
+ipcMain.handle("read-file", async (_, filePath) => {
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch (error) {
+    console.error(error);
+    return "";
+  }
+});
+
+ipcMain.handle("write-file", async (_, filePath, content) => {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content);
+    return { success: true };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("search-files", async (_, query) => {
+  try {
+    const workspace = path.join(process.cwd(), "data");
+    if (!fs.existsSync(workspace)) return [];
+    return fs.readdirSync(workspace).filter((f) => f.toLowerCase().includes(query.toLowerCase()));
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+});
+
+/* --------------------------
+   AGENT CHAT
+-------------------------- */
+
+ipcMain.handle("ask-agent", async (_, { messages, currentFile, model }) => {
+  try {
+    const result = await agents.askAgent(messages, currentFile, model);
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   BUILD LOOP
+-------------------------- */
+
+ipcMain.handle("start-build-loop", async (_, { projectName, files, currentTechStack }) => {
+  try {
+    const result = await agents.startBuildLoop(projectName, files, currentTechStack);
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("stop-build-loop", async () => ({ success: true }));

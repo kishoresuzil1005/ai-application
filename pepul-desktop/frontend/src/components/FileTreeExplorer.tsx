@@ -99,7 +99,9 @@ function FileIcon({ name }: { name: string }) {
 function buildFileTree(files: any[]): FileItem[] {
   const root: FileItem[] = [];
 
-  files.forEach((file) => {
+  const validFiles = files.filter((file) => file && typeof file === "object" && typeof file.path === "string");
+
+  validFiles.forEach((file) => {
     const parts = file.path.split("/");
     let currentLevel = root;
 
@@ -274,7 +276,8 @@ export default function FileTreeExplorer({
   gitModifiedFiles = [],
 }: Props) {
   // Check if structure is already nested (from backend) or flat (from LLM generateCode)
-  const isNested = files.length > 0 && files[0].isDirectory !== undefined;
+  const hasValidItems = files.some((file) => file && typeof file === "object");
+  const isNested = hasValidItems && files[0]?.isDirectory !== undefined;
   const tree = isNested ? files : buildFileTree(files);
 
   if (tree.length === 0) {

@@ -6,8 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "next": "cd frontend && next dev",
-    "electron": "electron .",
-    "dev": "concurrently --kill-others \"npm run next\" \"wait-on http://localhost:3000 --timeout 60000 && npm run electron\"",
+    "electron": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "dev": "concurrently --kill-others --names \"next,electron\" \"npm run next\" \"wait-on http://localhost:3000 --timeout 60000 && npm run electron\"",
     "build": "cd frontend && next build",
     "start": "cd frontend && next start"
   },
@@ -15,7 +15,6 @@
     "@xyflow/react": "^12.11.0",
     "concurrently": "^10.0.3",
     "dotenv": "^17.4.2",
-    "electron": "^42.3.3",
     "lucide-react": "^1.17.0",
     "next": "^16.2.7",
     "node-pty": "^1.1.0",
@@ -29,6 +28,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
+    "electron": "^42.3.3",
     "electron-rebuild": "^3.2.9"
   }
 }

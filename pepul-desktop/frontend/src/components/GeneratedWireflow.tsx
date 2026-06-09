@@ -3,7 +3,7 @@
 import React from "react";
 
 import {
-  ReactFlow, 
+  ReactFlow,
   Background,
   Controls,
   Handle,
@@ -15,10 +15,21 @@ import "@xyflow/react/dist/style.css";
 function ScreenNode({
   data,
 }: any) {
+  const components = Array.isArray(data.components) ? data.components : [];
+
+  const renderComponent = (c: any, idx: number) => {
+    if (typeof c === "string") return <div key={idx}>{c}</div>;
+    if (c && typeof c === "object") {
+      const text = c.label || c.name || c.type || c.id || `Component ${idx + 1}`;
+      return <div key={idx}>{text}</div>;
+    }
+    return null;
+  };
+
   return (
     <div
       style={{
-        width: 280,
+        width: 300,
         background: "#111827",
         border: "1px solid #374151",
         borderRadius: 14,
@@ -37,40 +48,32 @@ function ScreenNode({
         style={{
           fontSize: 16,
           fontWeight: 700,
-          marginBottom: 12,
+          marginBottom: 10,
+          color: "#e2e8f0",
         }}
       >
-        {data.title}
+        {data.title || data.name || "Screen"}
       </div>
 
       <div
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: 6,
+          gap: 5,
         }}
       >
-        {data.components?.map(
-          (
-            component: any,
-            index: number
-          ) => {
-            // Handle both string and object components
-            const text = typeof component === 'string' 
-              ? component 
-              : (component?.name || component?.type || JSON.stringify(component));
-            return (
-              <div
-                key={index}
-                style={{
-                  fontSize: 12,
-                  color: "#cbd5e1",
-                }}
-              >
-                • {text}
-              </div>
-            );
-          }
+        {components.length > 0 ? (
+          components.map((c: any, index: number) => renderComponent(c, index))
+        ) : (
+          <div
+            style={{
+              fontSize: 11,
+              color: "#64748b",
+              fontStyle: "italic",
+            }}
+          >
+            No components defined
+          </div>
         )}
       </div>
 
@@ -91,42 +94,58 @@ export default function GeneratedWireflow({
 }: any) {
   if (!wireflow) return null;
 
-  const nodes =
-    wireflow.screens?.map(
-      (
-        screen: any,
-        index: number
-      ) => {
-        const components = (screen.components || []).map((c: any) =>
-          typeof c === 'string' ? c : (c?.name || c?.type || '')
-        ).filter(Boolean);
+  const screens = Array.isArray(wireflow.screens)
+    ? wireflow.screens
+    : Array.isArray(wireflow.app?.screens)
+      ? wireflow.app.screens
+      : [];
+  const flows = Array.isArray(wireflow.flows)
+    ? wireflow.flows
+    : Array.isArray(wireflow.app?.flows)
+      ? wireflow.app.flows
+      : [];
+
+  const nodes = screens.map(
+    (screen: any, index: number) => {
+      const components = Array.isArray(screen.components)
+        ? screen.components.map((c: any) =>
+            typeof c === "string" ? c : (c?.label || c?.name || c?.type || c?.id || String(c))
+          ).filter(Boolean)
+        : [];
+
+      const nodeId = screen.id || `screen-${index}`;
+      const title = screen.title || screen.name || `Screen ${index + 1}`;
+
+      return {
+        id: nodeId,
+        type: "screen",
+        position: {
+          x: 500,
+          y: index * 260,
+        },
+        data: {
+          title,
+          components,
+        },
+      };
+    }
+  );
+
+  const edges = flows
+    .map(
+      (flow: any, index: number) => {
+        const source = typeof flow === "string" ? flow : (flow?.from || flow?.source || flow?.id);
+        const target = typeof flow === "string" ? "" : (flow?.to || flow?.target || flow?.id);
+        if (!source || !target) return null;
         return {
-          id: screen.id,
-          type: "screen",
-          position: {
-            x: 500,
-            y: index * 240,
-          },
-          data: {
-            title: screen.title,
-            components,
-          },
+          id: `edge-${index}`,
+          source,
+          target,
+          animated: true,
         };
       }
-    ) || [];
-
-  const edges =
-    wireflow.flows?.map(
-      (
-        flow: any,
-        index: number
-      ) => ({
-        id: `edge-${index}`,
-        source: flow.from,
-        target: flow.to,
-        animated: true,
-      })
-    ) || [];
+    )
+    .filter(Boolean);
 
   return (
     <div

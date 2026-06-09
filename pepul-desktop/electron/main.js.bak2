@@ -1,0 +1,328 @@
+require("dotenv").config();
+require("./database/init");
+
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+} = require("electron");
+
+const path = require("path");
+const fs = require("fs");
+
+const aiManager = require("./services/aiManager");
+const aiConfig = require("./config/aiConfig");
+const groq = require("./services/groq");
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1600,
+    height: 900,
+    backgroundColor: "#0f1117",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const port = process.env.NEXT_PORT || 3000;
+  win.loadURL(`http://localhost:${port}`);
+  if (process.env.NODE_ENV === "development") {
+    win.webContents.openDevTools();
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
+
+/* --------------------------
+   OPEN FOLDER
+-------------------------- */
+ipcMain.handle(
+  "open-folder",
+  async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  }
+);
+
+/* --------------------------
+   AI MODEL MANAGEMENT
+-------------------------- */
+ipcMain.handle("get-ai-model", async () => ({ ...aiConfig }));
+ipcMain.handle("set-ai-model", async (_, { provider, model, domain }) => {
+  if (!provider || !model) throw new Error("provider and model are required");
+  if (domain === "code") {
+    aiConfig.codeProvider = provider;
+    aiConfig.codeModel = model;
+  } else if (domain === "chat") {
+    aiConfig.chatProvider = provider;
+    aiConfig.chatModel = model;
+  } else {
+    aiConfig.provider = provider;
+    aiConfig.model = model;
+  }
+  return true;
+});
+
+/* --------------------------
+   WIREFLOW
+-------------------------- */
+ipcMain.handle("generate-wireflow", async (_, prompt) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are a Senior UX Architect. Return ONLY valid JSON.",
+      prompt,
+      "wireflow"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   REQUIREMENTS
+-------------------------- */
+ipcMain.handle("generate-requirements", async (_, wireflow) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are a Senior Business Analyst. Return ONLY valid JSON.",
+      JSON.stringify(typeof wireflow === "string" ? JSON.parse(wireflow) : wireflow, null, 2),
+      "wireflow"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   ARCHITECTURE
+-------------------------- */
+ipcMain.handle("generate-architecture", async (_, wireflow) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are a Senior Software Architect. Return ONLY valid JSON.",
+      JSON.stringify(typeof wireflow === "string" ? JSON.parse(wireflow) : wireflow, null, 2),
+      "wireflow"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   FILE STRUCTURE
+-------------------------- */
+ipcMain.handle("generate-file-structure", async (_, architecture) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are a Senior Software Architect. Return ONLY valid JSON.",
+      JSON.stringify(typeof architecture === "string" ? JSON.parse(architecture) : architecture, null, 2),
+      "wireflow"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   SOURCE CODE
+-------------------------- */
+ipcMain.handle("generate-source-code", async (_, data) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are an expert software engineer. Return ONLY valid JSON.",
+      JSON.stringify(data, null, 2),
+      "code"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   GENERATE CODE
+-------------------------- */
+ipcMain.handle("generate-code", async (_, architecture, wireflow, files) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are an expert software engineer. Return ONLY valid JSON.",
+      JSON.stringify({ architecture, wireflow, files }, null, 2),
+      "code"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   CREATE PROJECT
+-------------------------- */
+ipcMain.handle("create-project", async (_, data) => {
+  try {
+    const projectName = (data.wireflow && data.wireflow.projectName) || "generated-app";
+    const root = path.join(data.folder, projectName.replace(/\s+/g, "-").toLowerCase());
+    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
+
+    const sourceCode = await aiManager.askAI(
+      "You are an expert software engineer. Return ONLY valid JSON.",
+      JSON.stringify(data, null, 2),
+      "code"
+    );
+
+    let parsed;
+    try {
+      parsed = JSON.parse(extractJsonString(sourceCode));
+    } catch (parseError) {
+      console.error("Invalid JSON from code generation:", sourceCode.substring(0, 500));
+      throw new Error(`Invalid JSON: ${parseError.message}`);
+    }
+
+    for (const file of parsed.files) {
+      const filePath = path.join(root, file.path);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, file.content);
+    }
+
+    return { success: true, root };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   WORKSPACE FILES
+-------------------------- */
+ipcMain.handle("get-workspace-files", async () => {
+  try {
+    const workspace = path.join(process.cwd(), "data");
+    if (!fs.existsSync(workspace)) return [];
+    return fs.readdirSync(workspace);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+});
+
+/* --------------------------
+   GIT STATUS
+-------------------------- */
+ipcMain.handle("get-git-status", async () => ({
+  branch: "main",
+  modifiedFiles: [],
+  staged: [],
+}));
+
+/* --------------------------
+   EDITOR
+-------------------------- */
+ipcMain.handle("read-file", async (_, filePath) => {
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch (error) {
+    console.error(error);
+    return "";
+  }
+});
+
+ipcMain.handle("write-file", async (_, filePath, content) => {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content);
+    return { success: true };
+  } catch (error) {
+    console.error(error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("search-files", async (_, query) => {
+  try {
+    const workspace = path.join(process.cwd(), "data");
+    if (!fs.existsSync(workspace)) return [];
+    return fs.readdirSync(workspace).filter((f) => f.toLowerCase().includes(query.toLowerCase()));
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+});
+
+/* --------------------------
+   AGENT CHAT
+-------------------------- */
+ipcMain.handle("ask-agent", async (_, { messages, currentFile, model }) => {
+  try {
+    const provider = model?.provider || aiConfig.chatProvider;
+    const modelId = model?.model || aiConfig.chatModel;
+    const result = await aiManager.askAI(
+      "You are a Senior Software Engineer helping with code.",
+      JSON.stringify({ messages, currentFile }, null, 2),
+      "chat",
+      { provider, model: modelId }
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/* --------------------------
+   BUILD LOOP
+-------------------------- */
+ipcMain.handle("start-build-loop", async (_, { projectName, files, currentTechStack }) => {
+  try {
+    const result = await aiManager.askAI(
+      "You are a build engineer. Analyze the project and return ONLY a JSON array of terminal build commands.",
+      JSON.stringify({ projectName, files, currentTechStack }, null, 2),
+      "code"
+    );
+    return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("stop-build-loop", async () => ({ success: true }));
+
+function extractJsonString(raw) {
+  let text = raw.trim();
+  text = text.replace(/```(?:json)?\n?/gi, "").trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("Invalid JSON response");
+  let jsonStr = text.slice(start, end + 1);
+  try { JSON.parse(jsonStr); return jsonStr; }
+  catch (parseError) {
+    jsonStr = jsonStr.replace(/"content":\s*"([^"]|\\")*$/gm, (match) => {
+      const lastQuote = match.lastIndexOf('"');
+      if (lastQuote > 0 && lastQuote === match.length - 1) return match + '"';
+      return match;
+    });
+    try { JSON.parse(jsonStr); return jsonStr; }
+    catch (e) { throw parseError; }
+  }
+}

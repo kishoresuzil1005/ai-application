@@ -19,6 +19,13 @@ type ChatMessage = {
 };
 
 export default function Home() {
+  const AVAILABLE_MODELS = [
+    { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B" },
+    { provider: "groq", model: "mixtral-8x7b-32768", label: "Mixtral 8x7B" },
+    { provider: "groq", model: "deepseek-r1-distill-llama-70b", label: "DeepSeek R1" },
+    { provider: "groq", model: "qwen-2.5-72b-instruct", label: "Qwen 2.5 72B" },
+  ];
+
   // Navigation & UI Layout State
   const [activeSidebarTab, setActiveSidebarTab] = useState<"Explorer" | "Search" | "Git" | "Settings">("Explorer");
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<string>("Wireflow");
@@ -27,7 +34,11 @@ export default function Home() {
 
   // Input & Prompting State
   const [prompt, setPrompt] = useState<string>("");
-  const [modelSelection, setModelSelection] = useState<string>("Gemini 3.5 Flash (Medium)");
+  const [modelSelection, setModelSelection] = useState<{provider: string; model: string; label: string}>({
+    provider: "groq",
+    model: "llama-3.3-70b-versatile",
+    label: "Llama 3.3 70B",
+  });
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   // Generation Flow States
@@ -107,8 +118,11 @@ export default function Home() {
 
   const loadGitStatus = async () => {
     if (window.electronAPI) {
-      const status = await window.electronAPI.getGitStatus();
-      setGitStatus(status || { branch: "main", modifiedFiles: [] });
+      const status = await window.electronAPI.getGitStatus() as { branch?: string; modifiedFiles?: { path: string; status: string }[] } | undefined;
+      setGitStatus({
+        branch: status?.branch || "main",
+        modifiedFiles: status?.modifiedFiles || [],
+      });
     }
   };
 
@@ -134,7 +148,7 @@ export default function Home() {
     try {
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "📐 Constructing applications screens and flow diagram. Please wait...", model: modelSelection },
+        { role: "assistant", content: "📐 Constructing applications screens and flow diagram. Please wait...", model: modelSelection.label },
       ]);
 
       const response = await window.electronAPI.generateWireflow(userMsg);
@@ -142,25 +156,36 @@ export default function Home() {
         throw new Error(response.error);
       }
 
-      const parsedWireflow = parseJson(response.data || "");
-      setWireflow(parsedWireflow);
-      setProjectName(parsedWireflow.projectName || "generated-app");
+      const raw = response.data || "";
+      const parsedWireflow = parseJson(raw);
 
-      // Automatically focus on Wireflow tab
-      setActiveWorkspaceTab("Wireflow");
-
-      setChatMessages((prev) => [
-        ...prev.slice(0, -1),
-        {
-          role: "assistant",
-          content: `📐 Generated the **Wireflow Diagram** for your idea: **"${parsedWireflow.projectName}"**. Please review the visual screen layout in the center canvas. You can Approve it or request revisions.`,
-          model: modelSelection,
-        },
-      ]);
+      if (parsedWireflow._error) {
+        setChatMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            role: "assistant",
+            content: `⚠️ ${parsedWireflow._error}`,
+            model: modelSelection.label,
+          },
+        ]);
+        setWireflow(null);
+      } else {
+        setWireflow(parsedWireflow);
+        setProjectName(parsedWireflow.projectName || "generated-app");
+        setActiveWorkspaceTab("Wireflow");
+        setChatMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            role: "assistant",
+            content: `📐 Generated the **Wireflow Diagram** for your idea: **"${parsedWireflow.projectName}"**. Please review the visual screen layout in the center canvas.`,
+            model: modelSelection.label,
+          },
+        ]);
+      }
     } catch (err: any) {
       setChatMessages((prev) => [
         ...prev.slice(0, -1),
-        { role: "assistant", content: `❌ Error generating wireflow: ${err.message}`, model: modelSelection },
+        { role: "assistant", content: `❌ Error generating wireflow: ${err.message}`, model: modelSelection.label },
       ]);
     } finally {
       setLoading(false);
@@ -1227,13 +1252,25 @@ Requested Tech Stack Revisions: ${stackChangeRequest}
                   
                   {/* Model Dropdown */}
                   <select
-                    value={modelSelection}
-                    onChange={(e) => setModelSelection(e.target.value)}
+                    value={modelSelection.label}
+                    onChange={(e) => {
+                      const selected = AVAILABLE_MODELS.find(m => m.label === e.target.value);
+                      if (selected) {
+                        setModelSelection(selected);
+                        window.electronAPI?.setAIModel({
+                          provider: selected.provider,
+                          model: selected.model,
+                          domain: "chat",
+                        }).catch(() => {});
+                      }
+                    }}
                     className="bg-transparent text-[10px] text-zinc-400 font-bold border-none outline-none focus:ring-0 cursor-pointer font-mono"
                   >
-                    <option value="Gemini 3.5 Flash (Medium)">Gemini 3.5 Flash (Medium)</option>
-                    <option value="Gemini 3.5 Pro (Large)">Gemini 3.5 Pro (Large)</option>
-                    <option value="Llama 3.3 70B (Versatile)">Llama 3.3 70B (Versatile)</option>
+                    {AVAILABLE_MODELS.map(m => (
+                      <option key={`${m.provider}-${m.model}`} value={m.label}>
+                        [{m.provider}] {m.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

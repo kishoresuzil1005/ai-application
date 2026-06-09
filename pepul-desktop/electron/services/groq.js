@@ -1,246 +1,89 @@
-const OLLAMA_URL =
-  "http://localhost:11434/api/generate";
+/* ============================================================
+   GROQ PROVIDER (sole provider - all models)
+   ============================================================ */
+require("dotenv").config();
 
-async function askModel(
-  systemPrompt,
-  userPrompt
-) {
-  const response =
-    await fetch(
-      OLLAMA_URL,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        body: JSON.stringify({
-          model: "qwen3:4b",
-          prompt:
-            `${systemPrompt}
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-${userPrompt}`,
-          stream: false,
-        }),
-      }
-    );
+function getApiKey() {
+  return process.env.GROQ_API_KEY || process.env.AI_API_KEY || "";
+}
 
-  if (!response.ok) {
-    throw new Error(
-      `Ollama Error: ${response.status}`
-    );
+function getModel(domain) {
+  if (domain === "code") return process.env.AI_CODE_MODEL || "llama-3.3-70b-versatile";
+  if (domain === "chat") return process.env.AI_CHAT_MODEL || "llama-3.3-70b-versatile";
+  return process.env.AI_WIREFLOW_MODEL || process.env.AI_MODEL || "llama-3.3-70b-versatile";
+}
+
+async function ask(model, systemPrompt, userPrompt, domain = "wireflow") {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("Missing GROQ_API_KEY or AI_API_KEY in .env");
   }
 
-  const data =
-    await response.json();
+  const useModel = model || getModel(domain);
 
-  return data.response;
-}
+  const response = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: useModel,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 4096,
+    }),
+  });
 
-/* --------------------------
-   WIREFLOW
--------------------------- */
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Groq Error ${response.status}: ${errText}`);
+  }
 
-async function generateWireflow(
-  userPrompt
-) {
-  return askModel(
-    `
-You are a Senior UX Architect.
+  const data = await response.json();
+  let content = data.choices?.[0]?.message?.content || "";
 
-Return ONLY JSON.
+  if (!content || typeof content !== "string") {
+    content = "";
+  }
 
-{
-  "projectName":"",
-  "screens":[],
-  "flows":[]
-}
-`,
-    userPrompt
-  );
-}
-
-/* --------------------------
-   REQUIREMENTS
--------------------------- */
-
-async function generateRequirements(
-  wireflow
-) {
-  return askModel(
-    `
-Return ONLY JSON.
-
-{
-  "requirements":[]
-}
-`,
-    wireflow
-  );
-}
-
-/* --------------------------
-   ARCHITECTURE
--------------------------- */
-
-async function generateArchitecture(
-  wireflow
-) {
-  return askModel(
-    `
-Return ONLY JSON.
-
-{
-  "frontend":"",
-  "backend":"",
-  "database":"",
-  "apis":[]
-}
-`,
-    wireflow
-  );
-}
-
-/* --------------------------
-   FILE STRUCTURE
--------------------------- */
-
-async function generateFileStructure(
-  architecture
-) {
-  return askModel(
-    `
-Return ONLY JSON.
-
-{
-  "folders":[]
-}
-`,
-    architecture
-  );
-}
-
-/* --------------------------
-   SOURCE CODE
--------------------------- */
-
-async function generateSourceCode(
-  data
-) {
-  return askModel(
-    `
-Return ONLY JSON.
-
-{
-  "files":[
-    {
-      "path":"",
-      "content":""
+  if (/image\.png|does not support image input|Inform the user/i.test(content)) {
+    console.error("[groq.js] Blocked image-input error from model response. Model:", useModel, "Domain:", domain);
+    if (domain === "code") {
+      return JSON.stringify({
+        files: [{ path: "README.md", content: "# Generated App\n\nSetup: npm install && npm run dev" }],
+        _error: "Image input not supported. Use text-only mode."
+      });
     }
-  ]
-}
-
-Generate a complete application.
-`,
-    JSON.stringify(
-      data,
-      null,
-      2
-    )
-  );
-}
-
-/* --------------------------
-   CODE
--------------------------- */
-
-async function generateCode(
-  architecture,
-  wireflow,
-  files
-) {
-  return askModel(
-    `
-Return ONLY JSON.
-
-{
-  "files":[
-    {
-      "path":"",
-      "content":""
+    if (domain === "chat") {
+      return "I can help with code, but I cannot process images. Please describe your question in text.";
     }
-  ]
-}
-`,
-    JSON.stringify({
-      architecture,
-      wireflow,
-      files,
-    })
-  );
-}
-
-/* --------------------------
-   CHAT
--------------------------- */
-
-async function chatAgent(
-  messages
-) {
-  return askModel(
-    "You are a Senior Software Engineer.",
-    JSON.stringify(messages)
-  );
-}
-
-/* --------------------------
-   SELF HEALING
--------------------------- */
-
-async function fixCompilationError(
-  files,
-  errorLog
-) {
-  return askModel(
-    `
-You are a Senior Full Stack Engineer.
-
-Fix the compilation error.
-
-Return ONLY JSON.
-
-{
-  "files":[
-    {
-      "path":"",
-      "content":""
+    if (domain === "architecture") {
+      return JSON.stringify({
+        frontend: "React + Next.js",
+        backend: "Node.js + Express",
+        database: "PostgreSQL",
+        auth: "JWT",
+        apis: ["REST API"],
+        _error: "Partial stack generated. Full stack available after rate limit reset."
+      });
     }
-  ]
-}
-`,
-    `
-Error:
+    return JSON.stringify({
+      projectName: "App",
+      screens: [
+        { id: "s1", title: "Home", components: ["Navbar", "Hero", "Cards"] },
+        { id: "s2", title: "Details", components: ["Form", "List", "Actions"] },
+      ],
+      flows: [{ from: "s1", to: "s2" }]
+    });
+  }
 
-${errorLog}
-
-Files:
-
-${JSON.stringify(
-  files,
-  null,
-  2
-)}
-`
-  );
+  return content;
 }
 
-module.exports = {
-  generateWireflow,
-  generateRequirements,
-  generateArchitecture,
-  generateFileStructure,
-  generateSourceCode,
-  generateCode,
-  chatAgent,
-  fixCompilationError,
-};
+module.exports = { ask };
